@@ -11,20 +11,12 @@
 #import "ORStructDeclare.h"
 
 @implementation ORTypeVarPair (TypeEncode)
-- (const char *)typeEncode{
-    if ([self.var isKindOfClass:[ORFuncVariable class]]) {
-        __autoreleasing NSString *string = self.var.isBlock ? @"@?" : @"^";
-        return string.UTF8String;
-    }
-    if (self.type.type == TypeStruct && self.var.ptCount == 0) {
-        ORStructDeclare *declare = [[ORStructDeclareTable shareInstance] getStructDeclareWithName:self.type.name];
-        return declare.typeEncoding;
-    }
+- (const char *)baseTypeEncode{
+    TypeKind type = self.type.type;
     char encoding[128];
     memset(encoding, 0, 128);
 #define append(str) strcat(encoding,str)
     NSInteger pointCount = self.var.ptCount;
-    TypeKind type = self.type.type;
     while (pointCount > 0) {
         if (type == TypeBlock) {
             break;
@@ -76,6 +68,38 @@ append(code); break;
     append("\0");
     __autoreleasing NSString *resultValue = [NSString stringWithUTF8String:encoding];
     return resultValue.UTF8String;
+}
+- (const char *)blockSignature{
+    ORFuncVariable *var = (ORFuncVariable *)self.var;
+    if ([var isKindOfClass:[ORFuncVariable class]] && var.isBlock) {
+        const char *returnEncode = [self baseTypeEncode];
+        __autoreleasing NSMutableString *result = [[NSString stringWithFormat:@"%s@?",returnEncode] mutableCopy];
+        for (ORTypeVarPair *arg in var.pairs) {
+            [result appendFormat:@"%s",arg.typeEncode];
+        }
+        return result.UTF8String;
+    }
+    return [self typeEncode];
+}
+- (const char *)typeEncode{
+    TypeKind type = self.type.type;
+    if ([self.var isKindOfClass:[ORFuncVariable class]]) {
+        // Block的typeEncode
+        if (self.var.isBlock) {
+            return @"@?".UTF8String;
+        }
+    }
+    if (type == TypeStruct && self.var.ptCount == 0) {
+        ORStructDeclare *declare = [[ORStructDeclareTable shareInstance] getStructDeclareWithName:self.type.name];
+        return declare.typeEncoding;
+    }
+    if (self.var.ptCount == 0 && type == TypeObject){
+        ORSymbolItem *item = [[ORTypeSymbolTable shareInstance] symbolItemForTypeName:self.type.name];
+        if (item) {
+            return item.typeEncode.UTF8String;
+        }
+    }
+    return [self baseTypeEncode];
 }
 @end
 

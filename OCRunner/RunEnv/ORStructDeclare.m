@@ -71,14 +71,14 @@
 
 
 @implementation ORStructDeclareTable{
-    NSMutableDictionary<NSString *, ORStructDeclare *> *_dic;
-    NSLock *_lock;
+    NSMutableDictionary<NSString *, ORStructDeclare *> *_cache;
 }
-
+- (void)clear{
+    _cache = [NSMutableDictionary dictionary];
+}
 - (instancetype)init{
     if (self = [super init]) {
-        _dic = [NSMutableDictionary dictionary];
-        _lock = [[NSLock alloc] init];
+        _cache = [NSMutableDictionary dictionary];
     }
     return self;
 }
@@ -91,27 +91,23 @@
     return st_instance;
 }
 - (void)addAlias:(NSString *)alias forTypeName:(NSString *)name{
-    [_lock lock];
-    if (_dic[name]) {
-        _dic[alias] = _dic[name];
+    id value = [_cache objectForKey:name];
+    if (value) {
+        _cache[name] = value;
     }
-    [_lock unlock];
 }
 - (void)addAlias:(NSString *)alias forStructTypeEncode:(const char *)typeEncode{
     NSString *structName = startStructNameDetect(typeEncode);
     [self addAlias:alias forTypeName:structName];
 }
 - (void)addStructDeclare:(ORStructDeclare *)structDeclare{
-    [_lock lock];
-    _dic[structDeclare.name] = structDeclare;
-    [_lock unlock];
+    if (structDeclare && structDeclare.name) {
+        _cache[structDeclare.name] = structDeclare;
+    }
 }
 
 - (ORStructDeclare *)getStructDeclareWithName:(NSString *)name{
-    [_lock lock];
-    ORStructDeclare *declare = _dic[name];
-    [_lock unlock];
-    return declare;
+    return _cache[name];
 }
 @end
 
@@ -133,11 +129,12 @@
     NSMutableDictionary<NSString *, ORSymbolItem *> *_table;
     NSLock *_lock;
 }
-
+- (void)clear{
+    _table = [NSMutableDictionary dictionary];
+}
 - (instancetype)init{
     if (self = [super init]) {
         _table = [NSMutableDictionary dictionary];
-        _lock = [[NSLock alloc] init];
     }
     return self;
 }
@@ -167,14 +164,10 @@
     if (alias.length == 0) {
         return;
     }
-    [_lock lock];
     _table[alias] = item;
-    [_lock unlock];
 }
 - (ORSymbolItem *)symbolItemForTypeName:(NSString *)typeName{
-    [_lock lock];
     ORSymbolItem *item = _table[typeName];
-    [_lock unlock];
     return item;
 }
 @end

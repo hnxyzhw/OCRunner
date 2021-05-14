@@ -9,12 +9,13 @@
 import XCTest
 import OCRunner
 import oc2mangoLib
+var hasAddScripts = false
 class CRunnerTests: XCTestCase {
     var scope: MFScopeChain!
     let ocparser = Parser.shared()
     var source = ""
     override func setUp() {
-        if MFScopeChain.topScope().vars.count == 0 {
+        if !hasAddScripts{
             let current = Bundle.init(for: CRunnerTests.classForCoder())
             let bundlePath = current.path(forResource: "Scripts", ofType: "bundle")!
             let scriptBundle = Bundle.init(path: bundlePath)!
@@ -31,6 +32,7 @@ class CRunnerTests: XCTestCase {
                 let ast = ocparser.parseSource(CCDData)
                 ORInterpreter.excuteNodes(ast.nodes as! [Any])
             }
+            hasAddScripts = true
         }
         scope = MFScopeChain.init(next: MFScopeChain.topScope())
         mf_add_built_in(scope)
@@ -53,6 +55,7 @@ class CRunnerTests: XCTestCase {
         float k = 0.5;
         double l = 0.5;
         char *str = "123";
+        SEL sel = @selector(test);
         """
         let ast = ocparser.parseSource(source)
         let exps = ast.globalStatements as! [ORNode]
@@ -73,7 +76,7 @@ class CRunnerTests: XCTestCase {
         XCTAssert(scopeValue!.longValue == -1)
         scopeValue = scope.getValueWithIdentifier("e")
         XCTAssert(scopeValue!.type == OCTypeLongLong)
-        XCTAssert(scopeValue!.longLongValue == -1)
+        XCTAssert(scopeValue!.longlongValue == -1)
         scopeValue = scope.getValueWithIdentifier("f")
         XCTAssert(scopeValue!.type == OCTypeUChar)
         XCTAssert(scopeValue!.uCharValue == 1)
@@ -98,6 +101,8 @@ class CRunnerTests: XCTestCase {
         scopeValue = scope.getValueWithIdentifier("str")
         XCTAssert(scopeValue!.type == OCTypeCString)
         XCTAssert(String(utf8String: scopeValue!.cStringValue!) == "123")
+        scopeValue = scope.getValueWithIdentifier("sel")
+        XCTAssert(scopeValue!.selValue == Selector("test"))
     }
     func testeDeclareBlock(){
         let source =
@@ -255,7 +260,7 @@ class CRunnerTests: XCTestCase {
     func testIfStatement(){
         let source =
         """
-        int func(int a){
+        int testIfStatement(int a){
             if (a <= 1){
               return 0;
             }else if (a < 10){
@@ -266,10 +271,10 @@ class CRunnerTests: XCTestCase {
               return 3;
             }
         }
-        int a = func(1);
-        int b = func(3);
-        int c = func(15);
-        int d = func(30);
+        int a = testIfStatement(1);
+        int b = testIfStatement(3);
+        int c = testIfStatement(15);
+        int d = testIfStatement(30);
         """
         let ast = ocparser.parseSource(source)
         let exps = ast.globalStatements as! [ORNode]
@@ -285,7 +290,7 @@ class CRunnerTests: XCTestCase {
     func testWhileStatement(){
         let source =
         """
-        int func(int x){
+        int testWhileStatement(int x){
             int a = 1;
             while(a < x){
                 if (x < 3){
@@ -302,12 +307,13 @@ class CRunnerTests: XCTestCase {
             }
             return a;
         }
-        int a = func(2);
-        int b = func(3);
-        int c = func(15);
-        int d = func(30);
+        int a = testWhileStatement(2);
+        int b = testWhileStatement(3);
+        int c = testWhileStatement(15);
+        int d = testWhileStatement(30);
         """
         let ast = ocparser.parseSource(source)
+        let scope = MFScopeChain.topScope()
         let exps = ast.globalStatements as! [ORNode]
         for exp in exps {
             exp.execute(scope);
@@ -320,7 +326,7 @@ class CRunnerTests: XCTestCase {
     func testDoWhileStatement(){
         let source =
         """
-        int func(int x){
+        int testDoWhileStatement(int x){
             int a = 1;
             do{
                 a++;
@@ -337,10 +343,10 @@ class CRunnerTests: XCTestCase {
             }while(a < x)
             return a;
         }
-        int a = func(2);
-        int b = func(3);
-        int c = func(15);
-        int d = func(30);
+        int a = testDoWhileStatement(2);
+        int b = testDoWhileStatement(3);
+        int c = testDoWhileStatement(15);
+        int d = testDoWhileStatement(30);
         """
         let ast = ocparser.parseSource(source)
         let exps = ast.globalStatements as! [ORNode]
@@ -355,7 +361,7 @@ class CRunnerTests: XCTestCase {
     func testSwitchStatement(){
         let source =
         """
-        int func(int x){
+        int testSwitchStatement(int x){
             int a = 0;
             switch (x){
                 case 0:
@@ -371,10 +377,10 @@ class CRunnerTests: XCTestCase {
             }
             return a;
         }
-        int a = func(0);
-        int b = func(1);
-        int c = func(2);
-        int d = func(3);
+        int a = testSwitchStatement(0);
+        int b = testSwitchStatement(1);
+        int c = testSwitchStatement(2);
+        int d = testSwitchStatement(3);
         """
         let ast = ocparser.parseSource(source)
         let exps = ast.globalStatements as! [ORNode]
@@ -390,7 +396,7 @@ class CRunnerTests: XCTestCase {
     func testForStatement(){
         let source =
         """
-        int func(int x){
+        int testForStatement(int x){
             int a = 1;
             for (a; a < x; a++){
                 if (x == 2){
@@ -407,10 +413,10 @@ class CRunnerTests: XCTestCase {
             }
             return a;
         }
-        int a = func(0);
-        int b = func(2);
-        int c = func(3);
-        int d = func(4);
+        int a = testForStatement(0);
+        int b = testForStatement(2);
+        int c = testForStatement(3);
+        int d = testForStatement(4);
         """
         let ast = ocparser.parseSource(source)
         let exps = ast.globalStatements as! [ORNode]
@@ -425,7 +431,7 @@ class CRunnerTests: XCTestCase {
     func testForStatementWithDeclare(){
         let source =
         """
-        int func(int x){
+        int testForStatementWithDeclare(int x){
             int b = 0;
             for (int a = 1; a < x; a++){
                 if (x == 2){
@@ -442,10 +448,10 @@ class CRunnerTests: XCTestCase {
             }
             return b;
         }
-        int a = func(0);
-        int b = func(2);
-        int c = func(3);
-        int d = func(4);
+        int a = testForStatementWithDeclare(0);
+        int b = testForStatementWithDeclare(2);
+        int c = testForStatementWithDeclare(3);
+        int d = testForStatementWithDeclare(4);
         """
         let ast = ocparser.parseSource(source)
         let exps = ast.globalStatements as! [ORNode]
@@ -461,7 +467,7 @@ class CRunnerTests: XCTestCase {
     func testForInStatement(){
         let source =
         """
-        int func(NSArray *x){
+        int testForInStatement(NSArray *x){
             int b = 0;
             for (NSNumber *value in x){
                 if ([value intValue] == 1)
@@ -473,7 +479,7 @@ class CRunnerTests: XCTestCase {
             }
             return b;
         }
-        int a = func(@[@(1),@(2),@(3)]);
+        int a = testForInStatement(@[@(1),@(2),@(3)]);
         """
         let ast = ocparser.parseSource(source)
         let exps = ast.globalStatements as! [ORNode]
@@ -541,9 +547,9 @@ class CRunnerTests: XCTestCase {
         XCTAssert(ORTestReplaceClass.testMethodReplaceTest())
         XCTAssert(test.testOriginalMethod() == 2)
         XCTAssert(test.testAddGlobalVar() == 1111)
-        if let dict = test.testMethodParameterListAndReturnValue(with: "ggggg") { (value) -> String in
+        if let dict = test.testMethodParameterListAndReturnValue(with: "ggggg", block: { (value) -> String in
             return "hhhh" + value
-        }() as? [AnyHashable:String]{
+        })() as? [AnyHashable:String]{
             XCTAssert(dict["param1"] == "ggggg")
             XCTAssert(dict["param2"] == "hhhhMango")
         }
@@ -588,8 +594,6 @@ class CRunnerTests: XCTestCase {
         """
         @interface ORTestClassProperty:NSObject
         @property (nonatomic,copy)NSString *strTypeProperty;
-        @property (nonatomic,weak)id weakObjectProperty;
-        @property (nonatomic,strong)id strongObjectProperty;
         @property (assign, nonatomic) NSInteger count;
         @end
         @implementation ORTestClassProperty
@@ -600,15 +604,6 @@ class CRunnerTests: XCTestCase {
         - (NSString *)testObjectPropertyTest{
             [self otherMethod];
             return self.strTypeProperty;
-        }
-
-        - (id)testWeakObjectProperty{
-            self.weakObjectProperty = self;//制造循环引用,下一个运行时释放
-            return self.weakObjectProperty;
-        }
-        - (id)testStrongObjectProperty{
-            self.strongObjectProperty = self;//制造循环引用
-            return self.strongObjectProperty;
         }
         - (id)testIvarx{
             _strTypeProperty = @"Mango-testIvar";
@@ -639,21 +634,6 @@ class CRunnerTests: XCTestCase {
         XCTAssert(test.testIvarx() == "Mango-testIvar")
         XCTAssert(test.testBasePropertyTest() == 100000)
         XCTAssert(test.testIvar() == 100001)
-        let weakResult = autoreleasepool{ () -> NSMutableString in
-            let flag = NSMutableString.init()
-            let weakTest = ORTestClassProperty.init(deallocFlag: flag)
-            XCTAssert(weakTest.testWeakObjectProperty() is ORTestClassProperty)
-            return flag
-        }
-        XCTAssert(weakResult == "has_dealloc")
-        
-        let strongResult = autoreleasepool{ () -> NSMutableString in
-            let flag = NSMutableString.init()
-            let strongTest = ORTestClassProperty.init(deallocFlag: flag)
-            XCTAssert(strongTest.testStrongObjectProperty() is ORTestClassProperty)
-            return flag
-        }
-        XCTAssert(strongResult == "")
 
     }
     func testClassIvar(){
@@ -661,13 +641,18 @@ class CRunnerTests: XCTestCase {
         """
         @implementation ORTestClassIvar
         - (id)testObjectIvar{
-            _objectIvar = [[NSObject alloc] init];
+            _objectIvar = @"test";
             return _objectIvar;
         }
-
         - (NSInteger)testIntIvar{
-            _intIvar = 10000001;
+            _intIvar = -1;
             return _intIvar;
+        }
+        - (unsigned int)testUIntIvar{
+            return 1000;
+        }
+        - (double)testDoubleIvar{
+            return 0.55;
         }
         @end
         """
@@ -677,9 +662,10 @@ class CRunnerTests: XCTestCase {
             classValue.execute(scope);
         }
         let test = ORTestClassIvar.init()
-//        XCTAssert(test.testObjectIvar() is NSObject)
-        let value = test.testIntIvar();
-        XCTAssert(value == 10000001,"\(value)")
+        XCTAssert(test.testObjectIvar() == "test")
+        XCTAssert(test.testIntIvar() == -1)
+        XCTAssert(test.testUIntIvar() == 1000)
+        XCTAssert(test.testDouble() == 0.55)
     }
     func testCallOCReturnBlock(){
         let source =
@@ -703,9 +689,9 @@ class CRunnerTests: XCTestCase {
     func testSuperMethodCall(){
         let source =
         """
-        @implementation MFCallSuperNoArgTest
+        @implementation MFCallSuperNoArgTestSupserTest
         - (BOOL)testCallSuperNoArgTestSupser{
-            return [super testCallSuperNoArgTestSupser];
+            return YES;
         }
         @end
         """
@@ -735,6 +721,24 @@ class CRunnerTests: XCTestCase {
         }
         let test = MFCallSuperNoArgTest.init()
         XCTAssert(test.testCallSuperNoArgTestSupser())
+    }
+    func testSuperClassReplace(){
+        let source =
+        """
+        @implementation BMW
+        - (int)run
+        {
+            return 2;
+        }
+        @end
+        """
+        let ast = ocparser.parseSource(source)
+        let classes = ast.classCache.allValues as! [ORClass];
+        for classValue in classes {
+            classValue.execute(scope);
+        }
+        let test = MiniBMW.init()
+        XCTAssert(test.run() == 2)
     }
     func testGCD(){
         let source =
@@ -889,8 +893,8 @@ class CRunnerTests: XCTestCase {
         XCTAssert(scope.getValueWithIdentifier("UIControlEventAllTouchEvents")!.uLongLongValue == 0x00000FFF)
         XCTAssert(scope.getValueWithIdentifier("UIControlEventAllEditingEvents")!.uLongLongValue == 0x000F0000)
         XCTAssert(scope.getValueWithIdentifier("UIControlEventApplicationReserved")!.uLongLongValue == 0x0F000000)
-        XCTAssert(scope.getValueWithIdentifier("UIControlEventSystemReserved")!.uLongLongValue == 0xF0000000)
-        XCTAssert(scope.getValueWithIdentifier("UIControlEventAllEvents")!.uLongLongValue == 0xFFFFFFFF)
+        XCTAssert(scope.getValueWithIdentifier("UIControlEventSystemReserved")!.uLongLongValue == UInt64(0xF0000000))
+        XCTAssert(scope.getValueWithIdentifier("UIControlEventAllEvents")!.uLongLongValue == UInt64(0xFFFFFFFF))
     }
     
     func testStructDeclare(){
@@ -955,5 +959,55 @@ class CRunnerTests: XCTestCase {
         XCTAssert(item1.typeEncode == "q", item1.typeEncode)
         XCTAssert(item2.typeEncode == "q", item2.typeEncode)
         
+    }
+    
+    func testNilCallMethod(){
+        source =
+        """
+        id a = [nil new];
+        id b = [XXLabel new];
+        id c = [object new];
+        id d = [a callMethod];
+        """
+        let ast = ocparser.parseSource(source)
+        let exps = ast.globalStatements as! [ORNode]
+        for exp in exps {
+            exp.execute(scope);
+        }
+        XCTAssert(scope.getValueWithIdentifier("a")?.objectValue == nil)
+        XCTAssert(scope.getValueWithIdentifier("b")?.objectValue == nil)
+        XCTAssert(scope.getValueWithIdentifier("c")?.objectValue == nil)
+        XCTAssert(scope.getValueWithIdentifier("d")?.objectValue == nil)
+    }
+    func testMethodReturn(){
+        let source =
+        """
+        @implementation ORMethodReturnTest
+        - (NSString *)showLog{
+           [self getMsg:@"Hello world!"];
+           return @"test";
+        }
+        - (NSString *)getMsg:(NSString *)msg{
+            return [NSString stringWithFormat:@"{OCRunner} %@", msg];
+        }
+        @end
+        NSString *value = [[ORMethodReturnTest new] showLog];
+        """
+        let ast = ocparser.parseSource(source)
+        for classValue in ast.nodes {
+            (classValue as! OCExecute).execute(scope);
+        }
+        let value = scope.getValueWithIdentifier("value")?.objectValue as? String ?? "failed"
+        XCTAssert(value == "test", value)
+    }
+    func testUnknownSelector(){
+        let source =
+        """
+        [UIColor red];
+        """
+        let ast = ocparser.parseSource(source)
+        for classValue in ast.nodes {
+            (classValue as! OCExecute).execute(scope);
+        }
     }
 }

@@ -8,12 +8,31 @@
 
 #import <XCTest/XCTest.h>
 #import <OCRunner.h>
+#import "ORTypeVarPair+TypeEncode.h"
 #import <oc2mangoLib/oc2mangoLib.h>
+#import "ORRecoverClass.h"
 #import <objc/message.h>
+#import "ORWeakPropertyAndIvar.h"
+#import "ORTestReplaceClass.h"
 @interface ORTestWithObjc : XCTestCase
 @property (nonatomic, strong)MFScopeChain *currentScope;
 @property (nonatomic, strong)MFScopeChain *topScope;
 @end
+
+@interface Fibonaccia: NSObject
+@end
+@implementation Fibonaccia
+-(int)run:(int)n{
+    if (n == 1 || n == 2)
+        return 1;
+    return [self run:n - 1] + [self run:n - 2];
+}
+@end
+int fibonaccia(int n) {
+    if (n == 1 || n == 2)
+        return 1;
+    return fibonaccia(n - 1) + fibonaccia(n - 2);
+}
 
 @implementation ORTestWithObjc
 - (void)setUp {
@@ -160,7 +179,7 @@ Element2Struct *Element2StructMake(){
     MFScopeChain *scope = self.currentScope;
     CGRect rect1 = CGRectZero;
     MFValue *value = [MFValue defaultValueWithTypeEncoding:@encode(CGRect)];
-    [value setPointerWithNoCopy:&rect1];
+    [value setStructPointerWithNoCopy:&rect1];
     [[value fieldNoCopyForKey:@"origin"] setFieldWithValue:[MFValue valueWithDouble:1] forKey:@"x"];
     [[value fieldNoCopyForKey:@"origin"] setFieldWithValue:[MFValue valueWithDouble:2] forKey:@"y"];
     XCTAssert(rect1.origin.x == 1, @"origin.x %f", rect1.origin.x);
@@ -176,7 +195,7 @@ Element2Struct *Element2StructMake(){
     for (id <OCExecute> exp in ast.globalStatements) {
         [exp execute:scope];
     }
-    MFValue *rectValue = [scope getValueWithIdentifier:@"rect"];
+    MFValue *rectValue = [scope recursiveGetValueWithIdentifier:@"rect"];
     CGRect rect = *(CGRect *) rectValue.pointer;
     XCTAssert(rectValue.type == OCTypeStruct);
     XCTAssert(rect.origin.x == 10);
@@ -189,7 +208,7 @@ Element2Struct *Element2StructMake(){
     MFScopeChain *scope = self.currentScope;
     CGRect rect1 = CGRectZero;
     MFValue *value = [MFValue defaultValueWithTypeEncoding:@encode(CGRect)];
-    [value setPointerWithNoCopy:&rect1];
+    [value setStructPointerWithNoCopy:&rect1];
     [[value fieldForKey:@"origin"] setFieldWithValue:[MFValue valueWithDouble:1] forKey:@"x"];
     [[value fieldForKey:@"origin"] setFieldWithValue:[MFValue valueWithDouble:2] forKey:@"y"];
     XCTAssert(rect1.origin.x == 0, @"origin.x %f", rect1.origin.x);
@@ -204,7 +223,7 @@ Element2Struct *Element2StructMake(){
     for (id <OCExecute> exp in ast.globalStatements) {
         [exp execute:scope];
     }
-    MFValue *rectValue = [scope getValueWithIdentifier:@"frame"];
+    MFValue *rectValue = [scope recursiveGetValueWithIdentifier:@"frame"];
     CGRect rect = *(CGRect *) rectValue.pointer;
     XCTAssert(rectValue.type == OCTypeStruct);
     XCTAssert(rect.size.width == 2);
@@ -214,18 +233,18 @@ Element2Struct *Element2StructMake(){
     MFScopeChain *scope = self.currentScope;
     NSString * source =
     @"UIView *view = [UIView new];"
-    "view.frame = CGRectMake(1,2,3,4);"
+    "view.frame = CGRectMake(0,0,3,4);"
     "CGRect frame = view.frame;"
     "CGFloat a = frame.size.height;";
     AST *ast = [OCParser parseSource:source];
     for (id <OCExecute> exp in ast.globalStatements) {
         [exp execute:scope];
     }
-    MFValue *frameValue = [scope getValueWithIdentifier:@"frame"];
+    MFValue *frameValue = [scope recursiveGetValueWithIdentifier:@"frame"];
     CGRect rect = *(CGRect *) frameValue.pointer;
     NSLog(@"%@",[NSValue valueWithCGRect:rect]);
     XCTAssert(frameValue.type == OCTypeStruct);
-    MFValue * aValue = [scope getValueWithIdentifier:@"a"];
+    MFValue * aValue = [scope recursiveGetValueWithIdentifier:@"a"];
     XCTAssert(aValue.type == OCTypeDouble);
     XCTAssert(aValue.doubleValue == 4);
 }
@@ -318,13 +337,13 @@ typedef struct MyStruct2 {
     for (id <OCExecute> exp in ast.globalStatements) {
         [exp execute:scope];
     }
-    MFValue *a = [scope getValueWithIdentifier:@"a"];
+    MFValue *a = [scope recursiveGetValueWithIdentifier:@"a"];
     XCTAssert(strcmp(a.typeEncode, "i") == 0);
     XCTAssert(*(int *)a.pointer == 1);
-    MFValue *b = [scope getValueWithIdentifier:@"b"];
+    MFValue *b = [scope recursiveGetValueWithIdentifier:@"b"];
     XCTAssert(strcmp(b.typeEncode, "^i") == 0);
     XCTAssert(**(int **)b.pointer == 1);
-    MFValue *c = [scope getValueWithIdentifier:@"c"];
+    MFValue *c = [scope recursiveGetValueWithIdentifier:@"c"];
     XCTAssert(strcmp(c.typeEncode, "^^i") == 0);
     NSLog(@"%s",c.typeEncode);
     XCTAssert(***(int ***)c.pointer == 1);
@@ -340,7 +359,7 @@ typedef struct MyStruct2 {
     for (id <OCExecute> exp in ast.globalStatements) {
         [exp execute:scope];
     }
-    MFValue *d = [scope getValueWithIdentifier:@"d"];
+    MFValue *d = [scope recursiveGetValueWithIdentifier:@"d"];
     XCTAssert(strcmp(d.typeEncode, "i") == 0);
     XCTAssert(*(int *)d.pointer == 1);
 }
@@ -394,9 +413,277 @@ typedef struct MyStruct2 {
     for (id <OCExecute> exp in ast.globalStatements) {
         [exp execute:scope];
     }
-    MFValue *d = [scope getValueWithIdentifier:@"object"];
+    MFValue *d = [scope recursiveGetValueWithIdentifier:@"object"];
     Protocol *protocol = d.objectValue;
     XCTAssert([NSStringFromProtocol(protocol) isEqualToString:@"NSObject"]);
 }
-
+- (void)testRecursiveFunction{
+    MFScopeChain *scope = self.currentScope;
+    NSString * source =
+    @"int fibonaccia(int n){"
+    @"    if (n == 1 || n == 2)"
+    @"        return 1;"
+    @"    return fibonaccia(n - 1) + fibonaccia(n - 2);"
+    @"}"
+    @"int a = fibonaccia(20);";
+    AST *ast = [OCParser parseSource:source];
+    for (id <OCExecute> exp in ast.globalStatements) {
+        [exp execute:scope];
+    }
+    MFValue *c = [scope recursiveGetValueWithIdentifier:@"a"];
+    XCTAssert(c.intValue == fibonaccia(20));
+}
+- (void)testRecursiveMethod{
+    MFScopeChain *scope = self.currentScope;
+    NSString * source =
+    @"@implementation Fibonaccia"
+    @"-(int)run:(int)n{"
+    @"    if (n == 1 || n == 2)"
+    @"        return 1;"
+    @"    return [self run:n - 1] + [self run:n - 2];"
+    @"}"
+    @"@end"
+    @"int a = [[Fibonaccia new] run:20];";
+    AST *ast = [OCParser parseSource:source];
+    for (id <OCExecute> exp in ast.nodes) {
+        [exp execute:scope];
+    }
+    MFValue *a = [scope recursiveGetValueWithIdentifier:@"a"];
+    XCTAssert(a.intValue == fibonaccia(20));
+}
+- (void)testFunctionPointerCall{
+    MFScopeChain *scope = self.currentScope;
+    [ORSystemFunctionPointerTable reg:@"class_getMethodImplementation" pointer:&class_getMethodImplementation];
+    NSString * source =
+    @"void *class_getMethodImplementation(Class cls, SEL name);"
+    @"int (*imp)(id target, SEL sel) = class_getMethodImplementation([ORTestReplaceClass class], @selector(testOriginalMethod));"
+    @"id value = [ORTestReplaceClass new];"
+    @"int a = imp(value, @selector(testOriginalMethod));";
+    AST *ast = [OCParser parseSource:source];
+    for (id <OCExecute> exp in ast.nodes) {
+        [exp execute:scope];
+    }
+    MFValue *a = [scope recursiveGetValueWithIdentifier:@"a"];
+    XCTAssert(a.intValue == 2);
+}
+- (void)testMutiTypeCalculate{
+    MFScopeChain *scope = self.currentScope;
+    NSString * source =
+    @"int a = 1 * 1.1;"
+    "int b = 2 * 10;"
+    "double c = 1 + 1.12;"
+    "double d = 1 / 2.0;"
+    "double e = 1 - 0.25;"
+    "BOOL f = 0 < 0.25;"
+    "BOOL g = 0.25 <= 0;"
+    "double h = 0.25 - 1;"
+    ;
+    AST *ast = [OCParser parseSource:source];
+    for (id <OCExecute> exp in ast.nodes) {
+        [exp execute:scope];
+    }
+    MFValue *a = [scope recursiveGetValueWithIdentifier:@"a"];
+    MFValue *b = [scope recursiveGetValueWithIdentifier:@"b"];
+    MFValue *c = [scope recursiveGetValueWithIdentifier:@"c"];
+    MFValue *d = [scope recursiveGetValueWithIdentifier:@"d"];
+    MFValue *e = [scope recursiveGetValueWithIdentifier:@"e"];
+    MFValue *f = [scope recursiveGetValueWithIdentifier:@"f"];
+    MFValue *g = [scope recursiveGetValueWithIdentifier:@"g"];
+    MFValue *h = [scope recursiveGetValueWithIdentifier:@"h"];
+    XCTAssert(a.intValue == 1);
+    XCTAssert(b.intValue == 20);
+    XCTAssert(c.doubleValue == 2.12);
+    XCTAssert(d.doubleValue == 0.5);
+    XCTAssert(e.doubleValue == 0.75);
+    XCTAssert(f.boolValue == YES);
+    XCTAssert(g.boolValue == NO);
+    XCTAssert(h.doubleValue == -0.75);
+}
+- (void)testCFunctionReturnTypeEncode{
+    NSString * source =
+    @"CGFloat testFunctionReturnType(int arg);"
+    @"CGFloat (***testFunctionReturnType)(int arg);"
+    @"CGFloat *testFunctionReturnType(int arg);"
+    @"XCTestCase *testFunctionReturnType(int arg);"
+    @"XCTestCase *(^testFunctionReturnType)(int arg);"
+    ;
+    AST *ast = [OCParser parseSource:source];
+    ORDeclareExpression *declare1 = ast.globalStatements[0];
+    ORDeclareExpression *declare2 = ast.globalStatements[1];
+    ORDeclareExpression *declare3 = ast.globalStatements[2];
+    ORDeclareExpression *declare4 = ast.globalStatements[3];
+    ORDeclareExpression *declare5 = ast.globalStatements[4];
+    NSString *returnType1 = [NSString stringWithUTF8String:declare1.pair.typeEncode];
+    XCTAssert([returnType1 isEqualToString:@"d"], @"%@", returnType1);
+    NSString *returnType2 = [NSString stringWithUTF8String:declare2.pair.typeEncode];
+    XCTAssert([returnType2 isEqualToString:@"^^^d"], @"%@", returnType2);
+    NSString *returnType3 = [NSString stringWithUTF8String:declare3.pair.typeEncode];
+    XCTAssert([returnType3 isEqualToString:@"^d"], @"%@", returnType3);
+    NSString *returnType4 = [NSString stringWithUTF8String:declare4.pair.typeEncode];
+    XCTAssert([returnType4 isEqualToString:@"@"], @"%@", returnType4);
+    NSString *returnType5 = [NSString stringWithUTF8String:declare5.pair.typeEncode];
+    XCTAssert([returnType5 isEqualToString:@"@?"], @"%@", returnType5);
+}
+- (void)testWeakPropertyAndIvar{
+    MFScopeChain *scope = self.currentScope;
+    NSString *source =
+    @""
+    "@interface ORWeakPropertyAndIvar()"
+    "@property(nonatomic, strong)id strongValue;"
+    "@property(nonatomic, weak)id weakValue;"
+    "@end"
+    "@implementation ORWeakPropertyAndIvar"
+    "- (void)propertyStrong{"
+    "   self.strongValue = self;"
+    "}"
+    "- (void)propertyWeak{"
+    "   self.weakValue = self;"
+    "}"
+    "- (void)ivarStrong{"
+    "   _strongValue = self;"
+    "}"
+    "- (void)ivarWeak{"
+    "   _weakValue = self;"
+    "}"
+    "@end";
+    
+    AST *ast = [OCParser parseSource:source];
+    for (id <OCExecute> exp in ast.nodes) {
+        [exp execute:scope];
+    }
+    NSMutableString *propertyStrong = [NSMutableString string];
+    @autoreleasepool {
+        ORWeakPropertyAndIvar *test = [[ORWeakPropertyAndIvar alloc] initWithContainer:propertyStrong];
+        [test propertyStrong];
+    }
+    XCTAssert(propertyStrong.length == 0);
+    
+    NSMutableString *propertyWeak = [NSMutableString string];
+    @autoreleasepool {
+        ORWeakPropertyAndIvar *test = [[ORWeakPropertyAndIvar alloc] initWithContainer:propertyWeak];
+        [test propertyWeak];
+    }
+    XCTAssert([propertyWeak isEqualToString:@"dealloc"]);
+    
+    NSMutableString *ivarStrong = [NSMutableString string];
+    @autoreleasepool {
+        ORWeakPropertyAndIvar *test = [[ORWeakPropertyAndIvar alloc] initWithContainer:ivarStrong];
+        [test ivarStrong];
+    }
+    XCTAssert(ivarStrong.length == 0);
+    
+    NSMutableString *ivarWeak = [NSMutableString string];
+    @autoreleasepool {
+        ORWeakPropertyAndIvar *test = [[ORWeakPropertyAndIvar alloc] initWithContainer:ivarWeak];
+        [test ivarWeak];
+    }
+    XCTAssert([ivarWeak isEqualToString:@"dealloc"]);
+}
+- (void)testRecover{
+    NSString *source = @"\
+    @interface ORRecoverClass : NSObject\
+    @property (nonatomic, assign)int value1;\
+    @property (nonatomic, copy)NSString *value2;\
+    @end\
+    @implementation ORRecoverClass\
+    + (int)classMethodTest{ return 0; }\
+    - (int)methodTest1{ return 0; }\
+    - (int)methodTest2{ return 0; }\
+    - (int)value1{ return 1; }\
+    - (NSString *)value2{ return @\"123\"; }\
+    @end";
+    AST *ast = [OCParser parseSource:source];
+    [ORInterpreter excuteNodes:ast.nodes];
+    ORRecoverClass *object = [ORRecoverClass new];
+    XCTAssert([object value1] == 1);
+    XCTAssert([[object value2] isEqual:@"123"]);
+    XCTAssert([object methodTest1] == 0);
+    XCTAssert([object methodTest2] == 0);
+    XCTAssert([ORRecoverClass classMethodTest] == 0);
+    [ORInterpreter recoverWithClearEnvironment:NO];
+    XCTAssert([object value1] == 0);
+    XCTAssert([object value2] == nil);
+    XCTAssert([object methodTest1] == 1);
+    XCTAssert([object methodTest2] == 1);
+    XCTAssert([ORRecoverClass classMethodTest] == 1);
+}
+- (void)testArgumentWithTypeDefBlock{
+    NSString *source = @"\
+    \
+    typedef NSString * (^TestBlock)  (NSString *);\
+    typedef NSString * (^TestBlock1) (TestBlock);\
+    TestBlock1 block = ^NSString *(TestBlock value){\
+        return value(@\"123321\");\
+    };\
+    NSString *result = block(^NSString *(NSString* value){\
+        return value;\
+    });";
+    AST *ast = [OCParser parseSource:source];
+    [ORInterpreter excuteNodes:ast.nodes];
+    MFValue *h = [[MFScopeChain topScope] recursiveGetValueWithIdentifier:@"result"];
+    XCTAssert([h.objectValue isEqual:@"123321"]);
+}
+int signatureBlockPtr(id object, int b){
+    return b * 2;
+}
+- (void)testNoSignatureBlock{
+    NSString *source = @"\
+    @implementation ORTestReplaceClass\
+    - (int)testNoSignatureBlock:(int(^)(int))arg{\
+        return arg(10);\
+    }\
+    @end\
+    ";
+    AST *ast = [OCParser parseSource:source];
+    [ORInterpreter excuteNodes:ast.nodes];
+    id block = (__bridge id)simulateNSBlock(NULL, &signatureBlockPtr, NULL);
+    int result = [[ORTestReplaceClass new] testNoSignatureBlock: block];
+    XCTAssert(result == 20);
+}
+- (void)testOCRecursiveFunctionPerformanceExample {
+    [self measureBlock:^{
+        fibonaccia(20);
+    }];
+}
+- (void)testOCRecursiveMethodPerformanceExample {
+    [self measureBlock:^{
+        [[Fibonaccia new] run:20];
+    }];
+}
+- (void)testOCRunnerRecursiveFunctionPerformanceExample {
+    MFScopeChain *scope = self.currentScope;
+    NSString * source =
+    @"int fibonaccia(int n){"
+    @"    if (n == 1 || n == 2)"
+    @"        return 1;"
+    @"    return fibonaccia(n - 1) + fibonaccia(n - 2);"
+    @"}"
+    @"int a = fibonaccia(20);";
+    AST *ast = [OCParser parseSource:source];
+    [self measureBlock:^{
+        for (id <OCExecute> exp in ast.globalStatements) {
+            [exp execute:scope];
+        }
+        NSLog(@"%d",[scope getValueWithIdentifier:@"a"].uIntValue);
+    }];
+}
+- (void)testOCRunnerRecursiveMethodPerformanceExample {
+    MFScopeChain *scope = self.currentScope;
+    NSString * source =
+    @"@implementation Fibonaccia"
+    @"-(int)run:(int)n{"
+    @"    if (n == 1 || n == 2)"
+    @"        return 1;"
+    @"    return [self run:n - 1] + [self run:n - 2];"
+    @"}"
+    @"@end"
+    @"int a = [[Fibonaccia new] run:20];";
+    AST *ast = [OCParser parseSource:source];
+    [self measureBlock:^{
+        for (id <OCExecute> exp in ast.nodes) {
+            [exp execute:scope];
+        }
+        NSLog(@"%d",[scope getValueWithIdentifier:@"a"].uIntValue);
+    }];
+}
 @end

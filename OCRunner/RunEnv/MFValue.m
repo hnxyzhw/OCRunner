@@ -14,21 +14,20 @@
 
 #define MFValueBridge(target,resultType)\
 resultType result;\
-const char *typeEncode = target.typeEncode;\
-switch (*typeEncode) {\
-    case OCTypeUChar: result = (resultType)*(unsigned char *)target.pointer; break;\
-    case OCTypeUInt: result = (resultType)*(unsigned int *)target.pointer; break;\
-    case OCTypeUShort: result = (resultType)*(unsigned short *)target.pointer; break;\
-    case OCTypeULong: result = (resultType)*(unsigned int *)target.pointer; break;\
-    case OCTypeULongLong: result = (resultType)*(unsigned long long *)target.pointer; break;\
-    case OCTypeBOOL: result = (resultType)*(BOOL *)target.pointer; break;\
-    case OCTypeChar: result = (resultType)*(char *)target.pointer; break;\
-    case OCTypeShort: result = (resultType)*(short *)target.pointer; break;\
-    case OCTypeInt: result = (resultType)*(int *)target.pointer; break;\
-    case OCTypeLong: result = (resultType)*(int *)target.pointer; break;\
-    case OCTypeLongLong: result = (resultType)*(long long *)target.pointer; break;\
-    case OCTypeFloat: result = (resultType)*(float *)target.pointer; break;\
-    case OCTypeDouble: result = (resultType)*(double *)target.pointer; break;\
+switch (*target->_typeEncode) {\
+    case OCTypeUChar: result = (resultType)target->realBaseValue.uCharValue; break;\
+    case OCTypeUInt: result = (resultType)target->realBaseValue.uIntValue; break;\
+    case OCTypeUShort: result = (resultType)target->realBaseValue.uShortValue; break;\
+    case OCTypeULong: result = (resultType)target->realBaseValue.uLongValue; break;\
+    case OCTypeULongLong: result = (resultType)target->realBaseValue.uLongLongValue; break;\
+    case OCTypeBOOL: result = (resultType)target->realBaseValue.boolValue; break;\
+    case OCTypeChar: result = (resultType)target->realBaseValue.charValue; break;\
+    case OCTypeShort: result = (resultType)target->realBaseValue.shortValue; break;\
+    case OCTypeInt: result = (resultType)target->realBaseValue.intValue; break;\
+    case OCTypeLong: result = (resultType)target->realBaseValue.longValue; break;\
+    case OCTypeLongLong: result = (resultType)target->realBaseValue.longlongValue; break;\
+    case OCTypeFloat: result = (resultType)target->realBaseValue.floatValue; break;\
+    case OCTypeDouble: result = (resultType)target->realBaseValue.doubleValue; break;\
     default: result = 0;\
 }
 
@@ -37,7 +36,6 @@ extern BOOL MFStatementResultTypeIsReturn(MFStatementResultType type){
 }
 @interface MFValue()
 @property (nonatomic,strong)id strongObjectValue;
-@property (nonatomic,weak)id weakObjectValue;
 @end
 
 @implementation MFValue
@@ -45,54 +43,154 @@ extern BOOL MFStatementResultTypeIsReturn(MFStatementResultType type){
     BOOL _isAlloced;
 }
 + (instancetype)defaultValueWithTypeEncoding:(const char *)typeEncode{
-    return [MFValue valueWithTypeEncode:typeEncode pointer:NULL];;
+    return [MFValue valueWithTypeEncode:typeEncode pointer:NULL];
 }
 + (instancetype)valueWithTypeEncode:(const char *)typeEncode pointer:(void *)pointer{
-    return [[MFValue alloc]initTypeEncode:typeEncode pointer:pointer];;;
+    return [[MFValue alloc]initTypeEncode:typeEncode pointer:pointer];
+}
++ (instancetype)valueWithORCaculateValue:(ORCaculateValue)value{
+    MFValue *result = [MFValue new];
+    result.typeEncode = value.typeEncode;
+    result->realBaseValue = value.box;
+    result->_pointer = &result->realBaseValue;
+    return result;
 }
 - (instancetype)initTypeEncode:(const char *)typeEncoding pointer:(void *)pointer{
     self = [super init];
     typeEncoding = removeTypeEncodingPrefix((char *)typeEncoding);
-    self.typeEncode = typeEncoding;
-    self.pointer = pointer;
+    _modifier = DeclarationModifierNone;
+    [self setTypeEncode:typeEncoding];
+    [self setPointer:pointer];
     return self;
 }
 - (void)deallocPointer{
     if (_pointer != NULL && _isAlloced) {
-        if (*_typeEncode == '*') {
-            void *str = *(void **)_pointer;
-            free(str);
-        }
-        free(_pointer);
-        _pointer = NULL;
-        _strongObjectValue = nil;
-        _weakObjectValue = nil;
+        free(realBaseValue.pointerValue);
+        realBaseValue.pointerValue = NULL;
     }
+    realBaseValue.pointerValue = NULL;
+    _pointer = NULL;
+    _strongObjectValue = nil;
 }
 - (void)setPointer:(void *)pointer{
-    NSCAssert(self.typeEncode != NULL, @"TypeEncode must exist");
+    NSCAssert(_typeEncode != NULL, @"TypeEncode must exist");
     [self deallocPointer];
-    NSUInteger size = self.memerySize;
-    void *dst = malloc(size);
-    memset(dst, 0, size);
-    _pointer = dst;
-    _isAlloced = YES;
+    _isAlloced = NO;
+    void *replace = NULL;
     if (pointer == NULL) {
-        return;
+        pointer = &replace;
     }
-    if (*_typeEncode == '@') {
-        self.strongObjectValue = *(__strong id *)pointer;
+    switch (*_typeEncode) {
+        case OCTypeUChar:
+            realBaseValue.uCharValue = *(unsigned char *)pointer;
+            _pointer = &realBaseValue.uCharValue;
+            break;
+        
+        case OCTypeUInt:
+            realBaseValue.uIntValue = *(unsigned int *)pointer;
+            _pointer = &realBaseValue.uIntValue;
+            break;
+        
+        case OCTypeUShort:
+            realBaseValue.uShortValue = *(unsigned short *)pointer;
+            _pointer = &realBaseValue.uShortValue;
+            break;
+        
+        case OCTypeULong:
+            realBaseValue.uLongValue = *(unsigned long *)pointer;
+            _pointer = &realBaseValue.uLongValue;
+            break;
+        
+        case OCTypeULongLong:
+            realBaseValue.uLongLongValue = *(unsigned long long *)pointer;
+            _pointer = &realBaseValue.uLongLongValue;
+            break;
+        
+        case OCTypeBOOL:
+            realBaseValue.boolValue = *(BOOL *)pointer;
+            _pointer = &realBaseValue.boolValue;
+            break;
+        
+        case OCTypeChar:
+            realBaseValue.charValue = *(char *)pointer;
+            _pointer = &realBaseValue.charValue;
+            break;
+        
+        case OCTypeShort:
+            realBaseValue.shortValue = *(short *)pointer;
+            _pointer = &realBaseValue.shortValue;
+            break;
+        
+        case OCTypeInt:
+            realBaseValue.intValue = *(int *)pointer;
+            _pointer = &realBaseValue.intValue;
+            break;
+        
+        case OCTypeLong:
+            realBaseValue.longValue = *(long *)pointer;
+            _pointer = &realBaseValue.longValue;
+            break;
+        
+        case OCTypeLongLong:
+            realBaseValue.longlongValue = *(long long *)pointer;
+            _pointer = &realBaseValue.longlongValue;
+            break;
+        
+        case OCTypeFloat:
+            realBaseValue.floatValue = *(float *)pointer;
+            _pointer = &realBaseValue.floatValue;
+            break;
+        
+        case OCTypeDouble:
+            realBaseValue.doubleValue = *(double *)pointer;
+            _pointer = &realBaseValue.doubleValue;
+            break;
+        
+        case OCTypeCString:
+            _isAlloced = YES;
+            char *str = *(char **)pointer;
+            if (str != NULL) {
+                str = strdup(str);
+            }
+            realBaseValue.pointerValue = str;
+            _pointer = &realBaseValue.pointerValue;
+            break;
+        
+        case OCTypeObject:
+            realBaseValue.pointerValue = *(void **)pointer;
+            [self setModifier:_modifier];
+            _pointer = &realBaseValue.pointerValue;
+        
+        case OCTypeClass:
+            realBaseValue.pointerValue = *(void **)pointer;
+            _pointer = &realBaseValue.pointerValue;
+            break;
+        
+        case OCTypeSEL:
+            realBaseValue.pointerValue = *(void **)pointer;
+            _pointer = &realBaseValue.pointerValue;
+            break;
+        
+        case OCTypeStruct:
+            _isAlloced = YES;
+            NSUInteger size = self.memerySize;
+            void *dst = malloc(size);
+            memset(dst, 0, size);
+            if (pointer != &replace) {
+                memcpy(dst, pointer, size);
+            }
+            realBaseValue.pointerValue = dst;
+            _pointer = realBaseValue.pointerValue;
+            break;
+        case OCTypePointer:
+            realBaseValue.pointerValue = *(void **)pointer;
+            _pointer = &realBaseValue.pointerValue;
+            break;
+        default:
+            realBaseValue.uLongLongValue = 0;
+            _pointer = &realBaseValue.uLongLongValue;
+            break;
     }
-    if (*_typeEncode == '*') {
-        char *str = *(char **)pointer;
-        size_t len = strlen(str);
-        char * cstring = malloc(len * sizeof(char) + 1);
-        cstring[len] = '\0';
-        memcpy(cstring, str, len);
-        *(void **)dst = cstring;
-        return;
-    }
-    memcpy(dst, pointer, size);
 }
 - (void)setPointerCount:(NSInteger)pointerCount{
     if (pointerCount > _pointerCount) {
@@ -110,8 +208,9 @@ extern BOOL MFStatementResultTypeIsReturn(MFStatementResultType type){
         self.typeEncode = typeencode;
     }
 }
-- (void)setPointerWithNoCopy:(void *)pointer{
+- (void)setStructPointerWithNoCopy:(void *)pointer{
     [self deallocPointer];
+    realBaseValue.pointerValue = pointer;
     _pointer = pointer;
     _isAlloced = NO;
 }
@@ -122,39 +221,50 @@ extern BOOL MFStatementResultTypeIsReturn(MFStatementResultType type){
     return strcmp(self.typeEncode, OCTypeStringBlock) == 0;
 }
 - (void)setModifier:(DeclarationModifier)modifier{
-    if (modifier & DeclarationModifierWeak && (self.type == OCTypeObject || self.isBlockValue)) {
-        self.weakObjectValue = self.strongObjectValue;
-        self.strongObjectValue = nil;
+    if (_type == OCTypeObject && realBaseValue.pointerValue != NULL) {
+        if  (modifier & DeclarationModifierWeak) {
+            /*
+             NOTE:
+             void * realBaseValue.pointerValue 其本身就相当于一个 weak 引用，区别仅为不会在被释放后置为nil
+             在之前的代码中，weakObjectValue也仅仅只是用于充当一个 weak 的作用，并没用其他的作用。
+             */
+            // 引用计数-1
+            _strongObjectValue = nil;
+        }else if (modifier & (DeclarationModifierNone | DeclarationModifierStrong)){
+            // 引用计数+1
+            _strongObjectValue = (__bridge id)(realBaseValue.pointerValue);
+        }
     }
     _modifier = modifier;
 }
-- (OCType)type{
-    if (self.typeEncode == NULL) {
-        return OCTypeLongLong;
-    }
-    return *self.typeEncode;
-}
 - (void)dealloc{
     [self deallocPointer];
-    if(_typeEncode != NULL) free((void *)_typeEncode);
+    if(_typeEncode != NULL && strlen(_typeEncode) > 1) free((void *)_typeEncode);
 }
 - (void)setTypeEncode:(const char *)typeEncode{
-    
-    void *result = NULL;
-    [self convertValueWithTypeEncode:typeEncode result:&result];
-    
-    if(_typeEncode != NULL)
-        free((void *)_typeEncode);
-    
-    size_t strLen = strlen(typeEncode);
-    char *buffer = malloc(strLen+1);
-    buffer[strLen] = '\0';
-    strncpy((void *)buffer, typeEncode, strLen);
-    _typeEncode = buffer;
-
-    if (result != NULL) {
-        self.pointer = &result;
+    if (typeEncode == NULL) {
+        typeEncode = OCTypeStringULongLong;
     }
+    _type = *typeEncode;
+    //基础类型转换
+    if (strlen(typeEncode) == 1) {
+        //类型相同时，直接跳过
+        if (_typeEncode != NULL && *typeEncode == *_typeEncode) {
+            return;
+        }
+        void *result = NULL;
+        [self convertValueWithTypeEncode:typeEncode result:&result];
+        _typeString.type = _type;
+        _typeString.end = '\0';
+        _typeEncode = (char *)&_typeString;
+        if (result != NULL) {
+            [self setPointer:&result];
+        }
+        return;
+    }
+    if(_typeEncode != NULL && strlen(_typeEncode) > 1)
+        free((void *)_typeEncode);
+    _typeEncode = strdup(typeEncode);
     _pointerCount = startDetectPointerCount(typeEncode);
     if (*typeEncode == OCTypeClass) {
         self.typeName = @"Class";
@@ -249,10 +359,10 @@ extern BOOL MFStatementResultTypeIsReturn(MFStatementResultType type){
 
 - (void)assignFrom:(MFValue *)src{
     [self setTypeInfoWithValue:src];
-    self.pointer = src.pointer;
+    [self setPointer:src.pointer];
 }
 - (void)setDefaultValue{
-    self.pointer = NULL;
+    [self setPointer:NULL];
 }
 - (void)setTypeBySearchInTypeSymbolTable{
     do {
@@ -265,6 +375,7 @@ extern BOOL MFStatementResultTypeIsReturn(MFStatementResultType type){
 }
 
 - (void)writePointer:(void *)pointer typeEncode:(const char *)typeEncode{
+    typeEncode = typeEncode == NULL ? OCTypeStringPointer : typeEncode;
     if (pointer == NULL) {
         return;
     }
@@ -398,9 +509,9 @@ extern BOOL MFStatementResultTypeIsReturn(MFStatementResultType type){
     NSUInteger offset = declare.keyOffsets[key].unsignedIntegerValue;
     MFValue *result = [MFValue defaultValueWithTypeEncoding:declare.keyTypeEncodes[key].UTF8String];
     if (copied) {
-        result.pointer = self.pointer + offset;
+        result.pointer = realBaseValue.pointerValue + offset;
     }else{
-        [result setPointerWithNoCopy:self.pointer + offset];
+        [result setStructPointerWithNoCopy:realBaseValue.pointerValue + offset];
     }
     return result;
 }
@@ -415,7 +526,10 @@ extern BOOL MFStatementResultTypeIsReturn(MFStatementResultType type){
     NSString *structName = self.typeName;
     ORStructDeclare *declare = [[ORStructDeclareTable shareInstance] getStructDeclareWithName:structName];
     NSUInteger offset = declare.keyOffsets[key].unsignedIntegerValue;
-    void *pointer = self.pointer + offset;
+    void *pointer = realBaseValue.pointerValue;
+    if (pointer != NULL) {
+        pointer += offset;
+    }
     [value writePointer:pointer typeEncode:declare.keyTypeEncodes[key].UTF8String];
 }
 - (void)enumerateStructFieldsUsingBlock:(void (^)(MFValue *field, NSUInteger idx, BOOL *stop))block{
@@ -495,7 +609,7 @@ extern BOOL MFStatementResultTypeIsReturn(MFStatementResultType type){
     MFValueBridge(self, int);
     return result;
 }
-- (long long)longLongValue{
+- (long long)longlongValue{
     MFValueBridge(self, long long);
     return result;
 }
@@ -514,8 +628,8 @@ extern BOOL MFStatementResultTypeIsReturn(MFStatementResultType type){
 - (id)objectValue{
     return *(__strong id *)self.pointer;
 }
-- (Class)classValue{
-    return *(Class *)self.pointer;
+- (void *)classValue{
+    return *(void **)self.pointer;
 }
 - (SEL)selValue{
     return *(SEL *)self.pointer;
@@ -584,5 +698,10 @@ extern BOOL MFStatementResultTypeIsReturn(MFStatementResultType type){
 + (instancetype)valueWithPointer:(void *)pointerValue{
     return [MFValue valueWithTypeEncode:OCTypeStringPointer pointer:&pointerValue];
 }
-
+#if DEBUG
+- (NSString *)description{
+    return [NSString stringWithFormat:@"[MFValue: %p, type: %d, typeName: %@, typeEncode: %s, pointerValue: %p, modifier:%d]"
+            ,self,self.type,self.typeName,self.typeEncode,self->realBaseValue.pointerValue,self.modifier];
+}
+#endif
 @end

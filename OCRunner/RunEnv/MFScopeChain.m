@@ -11,12 +11,10 @@
 #import "MFValue.h"
 #import "MFBlock.h"
 #import "MFPropertyMapTable.h"
-#import "MFWeakPropertyBox.h"
 #import "util.h"
 #import "RunnerClasses+Execute.h"
 #import "ORTypeVarPair+TypeEncode.h"
 @interface MFScopeChain()
-@property (strong,nonatomic)NSLock *lock;
 @end
 static MFScopeChain *instance = nil;
 @implementation MFScopeChain
@@ -30,34 +28,27 @@ static MFScopeChain *instance = nil;
 + (instancetype)scopeChainWithNext:(MFScopeChain *)next{
 	MFScopeChain *scope = [MFScopeChain new];
 	scope.next = next;
+    scope.instance = next.instance;
+#if DEBUG
+    MFValue *value = [MFValue valueWithObject:scope];
+    value.modifier = DeclarationModifierWeak;
+    [scope setValue:value withIndentifier:@"$curScope"];
+#endif
 	return scope;
 }
 
 - (instancetype)init{
 	if (self = [super init]) {
 		_vars = [NSMutableDictionary dictionary];
-        _lock = [[NSLock alloc] init];
 	}
 	return self;
 }
-
-- (id)instance{
-    return [self getValueWithIdentifier:@"self"].objectValue;
-}
 - (void)setValue:(MFValue *)value withIndentifier:(NSString *)identier{
-    [self.lock lock];
     self.vars[identier] = value;
-    [self.lock unlock];
 }
 
 - (MFValue *)getValueWithIdentifier:(NSString *)identifer{
-    [self.lock lock];
-    MFScopeChain *scope = self;
-    while (scope && !scope.vars[identifer]) {
-        scope = scope.next;
-    }
-    MFValue *value = scope.vars[identifer];
-    [self.lock unlock];
+    MFValue *value = self.vars[identifer];
 	return value;
 }
 
@@ -80,7 +71,7 @@ const void *mf_propKey(NSString *propName) {
         return nil;
     }
     
-    if (![ivarName hasPrefix:@"_"]) {
+    if ([ivarName characterAtIndex:0] != '_') {
         return nil;
     }
     
@@ -90,33 +81,32 @@ const void *mf_propKey(NSString *propName) {
 - (void)assignWithIdentifer:(NSString *)identifier value:(MFValue *)value{
 	for (MFScopeChain *pos = self; pos; pos = pos.next) {
 		if (pos.instance) {
+            id instance = [(MFValue *)pos.instance objectValue];
+            Class clazz = object_getClass(instance);
             NSString *propName = [self propNameByIvarName:identifier];
-            MFPropertyMapTable *table = [MFPropertyMapTable shareInstance];
-            Class clazz = object_getClass(pos.instance);
-            ORPropertyDeclare *propDef = [table getPropertyMapTableItemWith:clazz name:propName].property;
-            Ivar ivar;
-            if (propDef) {
-                id associationValue = value;
-                const char *type = propDef.var.typeEncode;
-                if (*type == '@') {
-                    associationValue = value.objectValue;
+            if (propName != nil) {
+                MFPropertyMapTable *table = [MFPropertyMapTable shareInstance];
+                ORPropertyDeclare *propDef = [table getPropertyMapTableItemWith:clazz name:propName].property;
+                if (propDef) {
+                    MFValue *result = [[MFValue alloc] initTypeEncode:propDef.var.typeEncode pointer:value.pointer];
+                    MFPropertyModifier modifier = propDef.modifier;
+                    if ((modifier & MFPropertyModifierMemMask) == MFPropertyModifierMemWeak) {
+                        result.modifier = DeclarationModifierWeak;
+                    }
+                    objc_AssociationPolicy associationPolicy = mf_AssociationPolicy_with_PropertyModifier(modifier);
+                    objc_setAssociatedObject(instance, mf_propKey(propName), result, associationPolicy);
+                    return;
                 }
-                MFPropertyModifier modifier = propDef.modifier;
-                if ((modifier & MFPropertyModifierMemMask) == MFPropertyModifierMemWeak) {
-                    associationValue = [[MFWeakPropertyBox alloc] initWithTarget:value];
-                }
-                objc_AssociationPolicy associationPolicy = mf_AssociationPolicy_with_PropertyModifier(modifier);
-                objc_setAssociatedObject(pos.instance, mf_propKey(propName), associationValue, associationPolicy);
-                return;
-            }else if((ivar = class_getInstanceVariable(object_getClass(pos.instance),identifier.UTF8String))){
+            }
+            Ivar ivar = class_getInstanceVariable(object_getClass(instance),identifier.UTF8String);
+            if(ivar){
                 const char *ivarEncoding = ivar_getTypeEncoding(ivar);
-                if (*ivarEncoding == '@') {
-                    object_setIvar(pos.instance, ivar, value.objectValue);
-                }else{
-                    ptrdiff_t offset = ivar_getOffset(ivar);
-                    void *ptr = (__bridge void *)(pos.instance) + offset;
-                    [value writePointer:ptr typeEncode:ivarEncoding];
+                if (*ivarEncoding == OCTypeObject) {
+                    object_setIvar(instance, ivar, value.objectValue);
+                    return;
                 }
+                void *ptr = (__bridge void *)(instance) + ivar_getOffset(ivar);
+                [value writePointer:ptr typeEncode:ivarEncoding];
                 return;
             }
 		}
@@ -132,40 +122,29 @@ const void *mf_propKey(NSString *propName) {
     MFScopeChain *pos = self;
     // FIX: while self == endScope, will ignore self
     do {
-        if (pos.instance) {
+        if ([identifier characterAtIndex:0] == '_' && pos.instance) {
+            id instance = [(MFValue *)pos.instance objectValue];
+            Class clazz = object_getClass(instance);
             NSString *propName = [self propNameByIvarName:identifier];
-            MFPropertyMapTable *table = [MFPropertyMapTable shareInstance];
-            Class clazz = object_getClass(pos.instance);
-            ORPropertyDeclare *propDef = [table getPropertyMapTableItemWith:clazz name:propName].property;
-            Ivar ivar;
-            if (propDef) {
-                id propValue = objc_getAssociatedObject(pos.instance, mf_propKey(propName));
-                const char *type = propDef.var.typeEncode;
-                MFValue *value = propValue;
-                if (!propValue) {
-                    value = [MFValue defaultValueWithTypeEncoding:type];
-                }else if(*type == '@'){
-                    if ([propValue isKindOfClass:[MFWeakPropertyBox class]]) {
-                        MFWeakPropertyBox *box = propValue;
-                        MFValue *weakValue = box.target;
-                        value = [MFValue valueWithObject:weakValue];
-                    }else{
-                        value = [MFValue valueWithObject:propValue];
+            if (propName != nil) {
+                MFPropertyMapTable *table = [MFPropertyMapTable shareInstance];
+                ORPropertyDeclare *propDef = [table getPropertyMapTableItemWith:clazz name:propName].property;
+                if (propDef) {
+                    MFValue *propValue = objc_getAssociatedObject(instance, mf_propKey(propName));
+                    if (!propValue) {
+                        return [MFValue defaultValueWithTypeEncoding:propDef.var.typeEncode];
                     }
+                    if (propValue.modifier & DeclarationModifierWeak) {
+                        propValue = [propValue copy];
+                    }
+                    return propValue;
                 }
-                return value;
-                
-            }else if((ivar = class_getInstanceVariable(object_getClass(pos.instance),identifier.UTF8String))){
-                MFValue *value;
+            }
+            Ivar ivar = class_getInstanceVariable(clazz, identifier.UTF8String);
+            if(ivar){
                 const char *ivarEncoding = ivar_getTypeEncoding(ivar);
-                if (*ivarEncoding == '@') {
-                    id ivarValue = object_getIvar(pos.instance, ivar);
-                    value = [MFValue valueWithObject:ivarValue];
-                }else{
-                    void *ptr = (__bridge void *)(pos.instance) +  ivar_getOffset(ivar);
-                    value = [[MFValue alloc] initTypeEncode:ivarEncoding pointer:ptr];
-                }
-                return value;
+                void *ptr = (__bridge void *)(instance) + ivar_getOffset(ivar);
+                return [[MFValue alloc] initTypeEncode:ivarEncoding pointer:ptr];
             }
         }
         MFValue *value = [pos getValueWithIdentifier:identifier];
@@ -177,31 +156,14 @@ const void *mf_propKey(NSString *propName) {
     return nil;
 }
 
-- (MFValue *)getValueWithIdentifierInChain:(NSString *)identifier{
+- (MFValue *)recursiveGetValueWithIdentifier:(NSString *)identifier{
     return [self getValueWithIdentifier:identifier endScope:nil];
 }
-
-- (void)setMangoBlockVarNil{
-//    dispatch_async(dispatch_get_global_queue(0, 0), ^{
-//        [self.lock lock];
-//        NSArray *allValues = [self.vars allValues];
-//        for (MFValue *value in allValues) {
-//            if ([value isObject]) {
-//                Class ocBlockClass = NSClassFromString(@"NSBlock");
-//                if ([[value c2objectValue] isKindOfClass:ocBlockClass]) {
-//                    struct MFSimulateBlock *blockStructPtr = (__bridge void *)value.objectValue;
-//                    if (blockStructPtr->flags & BLOCK_CREATED_FROM_MFGO) {
-//                        value.objectValue = nil;
-//                    }
-//                }
-//            }
-//        }
-//        [self.lock unlock];
-//    });
+- (void)removeForIdentifier:(NSString *)key{
+    [_vars removeObjectForKey:key];
 }
 - (void)clear{
     _vars = [NSMutableDictionary dictionary];
-    _lock = [[NSLock alloc] init];
 }
 @end
 

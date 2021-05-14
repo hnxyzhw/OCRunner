@@ -21,7 +21,7 @@
 @end
 
 @implementation MFPropertyMapTable{
-    NSLock *_lock;
+    CFMutableDictionaryRef _propertyCache;
 }
 
 + (instancetype)shareInstance{
@@ -35,30 +35,46 @@
 
 - (instancetype)init{
     if (self = [super init]) {
-        _dic = [NSMutableDictionary dictionary];
-        _lock = [[NSLock alloc] init];
+        _propertyCache = CFDictionaryCreateMutable(CFAllocatorGetDefault(), 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
     }
     return self;
 }
 
 - (void)addPropertyMapTableItem:(MFPropertyMapTableItem *)propertyMapTableItem{
+    if (!propertyMapTableItem) return;
+    
     NSString *propertyName = propertyMapTableItem.property.var.var.varname;
-    if (!propertyName.length) {
-        return;
+    if (!propertyName.length) return;
+    
+    Class class = propertyMapTableItem.clazz;
+    
+    if (class == NULL) return;
+    
+    CFMutableDictionaryRef propertyMap = (CFMutableDictionaryRef)CFDictionaryGetValue(_propertyCache, (__bridge const void *)(class));
+    if (propertyMap == NULL){
+        propertyMap = CFDictionaryCreateMutable(CFAllocatorGetDefault(), 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+        CFDictionarySetValue(_propertyCache, (__bridge const void *)(class), propertyMap);
     }
-    NSString *index = [NSString stringWithFormat:@"%@_%@",NSStringFromClass(propertyMapTableItem.clazz),propertyName];
-    [_lock lock];
-    _dic[index] = propertyMapTableItem;
-    [_lock unlock];
+    if (propertyName == nil) return;
+    CFDictionarySetValue(propertyMap, (__bridge CFStringRef)(propertyName), (__bridge const void *)(propertyMapTableItem));
 }
 
 - (MFPropertyMapTableItem *)getPropertyMapTableItemWith:(Class)clazz name:(NSString *)name{
-    NSString *index = [NSString stringWithFormat:@"%@_%@",NSStringFromClass(clazz),name];
-    [_lock lock];
-    MFPropertyMapTableItem *propertyMapTableItem = _dic[index];
-    [_lock unlock];
-    return propertyMapTableItem;
+    if (clazz == NULL) return nil;
+    if (name == nil) return nil;
+
+    CFDictionaryRef propertyMap = CFDictionaryGetValue(_propertyCache, (__bridge const void *)(clazz));
+    if (propertyMap == NULL) return nil;
+    
+    return CFDictionaryGetValue(propertyMap, (__bridge CFStringRef)(name));
 }
 
-
+- (void)removePropertiesForClass:(Class)clazz{
+    if (clazz == nil) return;
+    const void *key  = (__bridge const void *)clazz;
+    if (CFDictionaryGetValue(_propertyCache, key)) {
+        CFRelease(CFDictionaryGetValue(_propertyCache, key));
+    }
+    CFDictionaryRemoveValue(_propertyCache, key);
+}
 @end

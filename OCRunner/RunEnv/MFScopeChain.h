@@ -8,6 +8,7 @@
 
 #import <Foundation/Foundation.h>
 #import "ORArgsStack.h"
+#import "ORGlobalFunctionTable.h"
 #import "built-in.h"
 @class MFValue;
 NS_ASSUME_NONNULL_BEGIN
@@ -16,14 +17,15 @@ extern const void *mf_propKey(NSString *propName);
 @property (strong, nonatomic) NSMutableDictionary<NSString *,MFValue *> *vars;
 + (instancetype)topScope;
 @property (strong, nonatomic) MFScopeChain *next;
+@property (strong, nonatomic) MFValue *instance;
 
 + (instancetype)scopeChainWithNext:(MFScopeChain *)next;
 - (nullable MFValue *)getValueWithIdentifier:(NSString *)identifier endScope:(nullable MFScopeChain *)endScope;
-- (nullable MFValue *)getValueWithIdentifierInChain:(NSString *)identifier;
+- (nullable MFValue *)recursiveGetValueWithIdentifier:(NSString *)identifier;
 - (nullable MFValue *)getValueWithIdentifier:(NSString *)identifer;
 - (void)setValue:(MFValue *)value withIndentifier:(NSString *)identier;
 - (void)assignWithIdentifer:(NSString *)identifier value:(MFValue *)value;
-- (void)setMangoBlockVarNil;
+- (void)removeForIdentifier:(NSString *)key;
 - (void)clear;
 @end
 NS_ASSUME_NONNULL_END

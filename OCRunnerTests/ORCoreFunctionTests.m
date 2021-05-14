@@ -34,6 +34,8 @@ int functionCall1(){
 }
 - (void)testCallStructPointer{
     MFValue *result = [MFValue defaultValueWithTypeEncoding:@encode(CGAffineTransform)];
+    ORStructDeclare *declare = [ORStructDeclare structDecalre:@encode(CGAffineTransform) keys:@[@"a",@"b",@"c",@"d",@"tx",@"ty"]];
+    [[ORStructDeclareTable shareInstance] addStructDeclare:declare];
     void *funcptr = &CGAffineTransformScale;
     invoke_functionPointer(funcptr, @[[[MFValue alloc] initTypeEncode:@encode(CGAffineTransform) pointer:&CGAffineTransformIdentity],
                                       [MFValue valueWithDouble:0.5],
@@ -86,7 +88,7 @@ void testRegister1(ffi_cif *cif, void* ret, void **args, void *userdata){
 - (void)testRegisterFunctionCall{
     int (*func)(int a, float b) = register_function(&testRegister1, @[[ORTypeVarPair typePairWithTypeKind:TypeInt]
                                                                       ,[ORTypeVarPair typePairWithTypeKind:TypeFloat]],
-                                                    [ORTypeVarPair typePairWithTypeKind:TypeInt]);
+                                                    [ORTypeVarPair typePairWithTypeKind:TypeInt])->function_imp;
     int res = func(100, 0.1);
     XCTAssert(res == 100);
 }

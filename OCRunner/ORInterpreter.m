@@ -8,16 +8,30 @@
 
 #import "ORInterpreter.h"
 #import "RunnerClasses+Execute.h"
+#import "RunnerClasses+Recover.h"
 #import "MFScopeChain.h"
 #import "ORSearchedFunction.h"
 #import "MFValue.h"
 #import "ORStructDeclare.h"
-#import "ORSystemFunctionTable.h"
+#import "ORSystemFunctionPointerTable.h"
+#import "MFStaticVarTable.h"
+#import "ORffiResultCache.h"
+
+@interface ORInterpreter()
+@property (nonatomic, copy)NSArray *currentNodes;
+@end
 
 @implementation ORInterpreter
+
++ (instancetype)shared{
+    static dispatch_once_t onceToken;
+    static ORInterpreter *_instance = nil;
+    dispatch_once(&onceToken, ^{
+        _instance = [ORInterpreter new];
+    });
+    return _instance;
+}
 + (void)excuteBinaryPatchFile:(NSString *)path{
-    
-    
     //加载补丁文件
     ORPatchFile *file = [ORPatchFile loadBinaryPatch:path];
     
@@ -28,7 +42,21 @@
     [self excuteNodes:file.nodes];
 }
 
++ (void)excuteJsonPatchFile:(NSString *)path{
+    //加载补丁文件
+    ORPatchFile *file = [ORPatchFile loadJsonPatch:path];
+    
+    //如果版本判断未通过，则为nil
+    if (file == nil) {
+        return;
+    }
+    [self excuteNodes:file.nodes];
+}
+
 + (void)excuteNodes:(NSArray <ORNode *>*)nodes{
+    
+    ORInterpreter.shared.currentNodes = nodes;
+    
     MFScopeChain *scope = [MFScopeChain topScope];
     
     //添加函数、变量等
@@ -49,9 +77,12 @@
     for (id <OCExecute> expression in nodes) {
         if ([expression isKindOfClass:[ORDeclareExpression class]]) {
             ORTypeVarPair *pair = [(ORDeclareExpression *)expression pair];
+            NSString *name = pair.var.varname;
             if ([pair.var isKindOfClass:[ORFuncVariable class]]) {
-                [funcVars addObject:pair];
-                [names addObject:pair.var.varname];
+                if ([ORGlobalFunctionTable.shared getFunctionNodeWithName:name] == nil) {
+                    [funcVars addObject:pair];
+                    [names addObject:name];
+                }
                 continue;
             }
         }
@@ -63,9 +94,9 @@
     for (ORTypeVarPair *pair in funcVars) {
         ORSearchedFunction *function = table[pair.var.varname];
         function.funPair = pair;
-        if ([scope getValueWithIdentifier:function.name] == nil) {
-            [scope setValue:[MFValue valueWithObject:function] withIndentifier:function.name];
-        }
+        // 将每个ORSearchedFunction都保存在ORGlobalFunctionTable中，保证不会被释放。
+        // 因为在SymbolSearch.c中，将会给它的pointer成员变量赋值，如果在赋值前，对象被释放了，那么在给function->pointer赋值时将会得到一个访问已经被释放内存的错误。
+        [[ORGlobalFunctionTable shared] setFunctionNode:function WithName:function.name];
     }
     #if DEBUG
     NSMutableArray *functionNames = [NSMutableArray array];
@@ -73,11 +104,9 @@
         NSString *functionName = pair.var.varname;
         ORSearchedFunction *function = table[functionName];
         if (function.pointer == NULL
-            && [ORSystemFunctionTable pointerForFunctionName:functionName] == NULL) {
-            MFValue *value = [[MFScopeChain topScope] getValueWithIdentifier:functionName];
-            if (value == nil || [value.objectValue isKindOfClass:[ORSearchedFunction class]]) {
-                [functionNames addObject:functionName];
-            }
+            && [ORSystemFunctionPointerTable pointerForFunctionName:functionName] == NULL
+            && [[MFScopeChain topScope] getValueWithIdentifier:functionName] == nil) {
+            [functionNames addObject:functionName];
         }
     }
     if (functionNames.count > 0) {
@@ -86,7 +115,7 @@
         [build_ins appendString:@"\n|❕you need add ⬇️ code in the application file|"];
         [build_ins appendString:@"\n|----------------------------------------------|\n"];
         for (NSString *name in functionNames) {
-            NSString *build_in_declare = [NSString stringWithFormat:@"[ORSystemFunctionTable reg:@\"%@\" pointer:&%@];\n",name,name];
+            NSString *build_in_declare = [NSString stringWithFormat:@"[ORSystemFunctionPointerTable reg:@\"%@\" pointer:&%@];\n",name,name];
             [build_ins appendString:build_in_declare];
         }
         [build_ins appendString:@"-----------------------------------------------"];
@@ -94,5 +123,25 @@
     }
     #endif
     return normalStatements;
+}
+
++ (void)recover{
+    [self recoverWithClearEnvironment:YES];
+}
++ (void)recoverWithClearEnvironment:(BOOL)clear{
+    if (ORInterpreter.shared.currentNodes == nil) {
+        return;
+    }
+    for (ORNode *node in ORInterpreter.shared.currentNodes) {
+        [node recover];
+    }
+    [[ORffiResultCache shared] clear];
+    if (clear) {
+        [[MFScopeChain topScope] clear];
+        [[MFStaticVarTable shareInstance] clear];
+        [[ORStructDeclareTable shareInstance] clear];
+        [[ORTypeSymbolTable shareInstance] clear];
+    }
+    ORInterpreter.shared.currentNodes = [NSArray array];
 }
 @end
